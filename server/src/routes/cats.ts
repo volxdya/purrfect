@@ -46,11 +46,11 @@ export function catRoutes(app: FastifyInstance, ctx: Ctx) {
     const scores = db
       .prepare(
         `SELECT COUNT(*) AS posts, COALESCE(SUM(p.wins), 0) AS wins, COALESCE(MAX(p.elo), 1000) AS bestElo,
-           (SELECT COUNT(*) FROM reactions r JOIN posts p2 ON p2.id = r.post_id WHERE p2.cat_id = ?1) AS reactions,
-           (SELECT COUNT(*) FROM swipes s JOIN posts p3 ON p3.id = s.post_id WHERE p3.cat_id = ?1 AND s.verdict = 'supercat') AS supers
-         FROM posts p WHERE p.cat_id = ?1`,
+           (SELECT COUNT(*) FROM reactions r JOIN posts p2 ON p2.id = r.post_id WHERE p2.cat_id = ?) AS reactions,
+           (SELECT COUNT(*) FROM swipes s JOIN posts p3 ON p3.id = s.post_id WHERE p3.cat_id = ? AND s.verdict = 'supercat') AS supers
+         FROM posts p WHERE p.cat_id = ?`,
       )
-      .get(cat.id) as { posts: number; wins: number; bestElo: number; reactions: number; supers: number };
+      .get(cat.id, cat.id, cat.id) as { posts: number; wins: number; bestElo: number; reactions: number; supers: number };
     return {
       cat: {
         id: cat.id,

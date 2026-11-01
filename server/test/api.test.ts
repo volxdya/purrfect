@@ -290,6 +290,88 @@ describe('games', () => {
   });
 });
 
+describe('cats', () => {
+  it('passport shows karma from reactions, supercats and wins', async () => {
+    const owner = await user();
+    const fan = await user();
+    const catId = (await owner.call('POST', '/cats', { name: 'Барсик', traits: ['тюлень'] })).json().id;
+    const empty = await fan.call('GET', `/cats/${catId}`);
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json().cat).toMatchObject({ name: 'Барсик', traits: ['тюлень'], posts: 0, karma: 0, isMine: false });
+
+    const { post } = (await upload(owner.cookie(), { title: 'k', catId })).json();
+    await fan.call('PUT', `/posts/${post.id}/reaction`, { kind: 'love' });
+    await fan.call('POST', `/match/${post.id}`, { verdict: 'supercat' });
+    const { cat } = (await owner.call('GET', `/cats/${catId}`)).json();
+    expect(cat).toMatchObject({ posts: 1, reactions: 1, supers: 1, karma: 4, isMine: true });
+  });
+});
+
+describe('every other route the UI calls', () => {
+  it('cat passports can be edited and deleted, posts survive', async () => {
+    const owner = await user();
+    const other = await user();
+    const catId = (await owner.call('POST', '/cats', { name: 'Старое' })).json().id;
+    const { post } = (await upload(owner.cookie(), { title: 'c', catId })).json();
+    expect((await other.call('PUT', `/cats/${catId}`, { name: 'Чужое' })).statusCode).toBe(403);
+    expect((await owner.call('PUT', `/cats/${catId}`, { name: 'Новое' })).statusCode).toBe(200);
+    expect((await owner.call('GET', `/cats/${catId}`)).json().cat.name).toBe('Новое');
+    const feed = (await owner.call('GET', `/posts?catId=${catId}`)).json().posts;
+    expect(feed.map((p: { id: number }) => p.id)).toEqual([post.id]);
+    expect((await other.call('DELETE', `/cats/${catId}`)).statusCode).toBe(403);
+    expect((await owner.call('DELETE', `/cats/${catId}`)).statusCode).toBe(200);
+    expect((await owner.call('GET', `/posts/${post.id}`)).json().post.cat).toBeNull();
+  });
+
+  it('collections: add, list, read, remove a post', async () => {
+    const owner = await user();
+    const { post } = (await upload(owner.cookie(), { title: 'col' })).json();
+    const id = (await owner.call('POST', '/collections', { name: 'Любимые' })).json().id;
+    expect((await owner.call('POST', `/collections/${id}/posts`, { postId: post.id })).statusCode).toBe(200);
+    const [listed] = (await owner.call('GET', '/me/collections')).json().collections;
+    expect(listed).toMatchObject({ name: 'Любимые', count: 1 });
+    expect(listed.cover).toBeTruthy();
+    const read = (await owner.call('GET', `/collections/${id}`)).json();
+    expect(read.posts.map((p: { id: number }) => p.id)).toEqual([post.id]);
+    expect(read.collection.isMine).toBe(true);
+    expect((await owner.call('DELETE', `/collections/${id}/posts/${post.id}`)).statusCode).toBe(200);
+    expect((await owner.call('GET', `/collections/${id}`)).json().posts).toEqual([]);
+  });
+
+  it('follows drive the following feed; unfollow stops it', async () => {
+    const author = await user();
+    const fan = await user();
+    const { post } = (await upload(author.cookie(), { title: 'f' })).json();
+    const following = async () => (await fan.call('GET', '/posts?sort=following')).json().posts.map((p: { id: number }) => p.id);
+    expect(await following()).toEqual([]);
+    await fan.call('PUT', `/users/${author.username}/follow`);
+    expect(await following()).toEqual([post.id]);
+    expect((await fan.call('GET', `/users/${author.username}`)).json().user.isFollowing).toBe(true);
+    await fan.call('DELETE', `/users/${author.username}/follow`);
+    expect(await following()).toEqual([]);
+    expect((await fan.call('PUT', `/users/${fan.username}/follow`)).statusCode).toBe(400);
+  });
+
+  it('profile, notifications, comments, tags, random, hot feed and leaderboard respond', async () => {
+    const u = await user();
+    const { post } = (await upload(u.cookie(), { title: 't', tags: ['тренд'] })).json();
+    expect((await u.call('PATCH', '/me', { bio: 'мяу', avatarEmoji: '😼' })).statusCode).toBe(200);
+    expect((await u.call('GET', '/auth/me')).json().user).toMatchObject({ bio: 'мяу', avatarEmoji: '😼' });
+    expect((await u.call('POST', '/me/easter-egg')).statusCode).toBe(200);
+    expect((await u.call('POST', '/notifications/read')).statusCode).toBe(200);
+    expect((await u.call('GET', '/auth/me')).json().user.unread).toBe(0);
+    await u.call('POST', `/posts/${post.id}/comments`, { body: 'мур' });
+    expect((await u.call('GET', `/posts/${post.id}/comments`)).json().comments[0].body).toBe('мур');
+    expect((await u.call('GET', '/tags/trending')).json().tags.map((t: { tag: string }) => t.tag)).toContain('тренд');
+    expect((await u.call('GET', '/posts/random')).statusCode).toBe(200);
+    expect((await u.call('GET', '/posts?sort=hot')).statusCode).toBe(200);
+    expect((await u.call('GET', `/posts?tag=${encodeURIComponent('тренд')}`)).json().posts).toHaveLength(1);
+    const board = (await u.call('GET', '/leaderboard')).json();
+    expect(board.topUsers.length).toBeGreaterThan(0);
+    expect(Array.isArray(board.topElo) && Array.isArray(board.topWeek)).toBe(true);
+  });
+});
+
 describe('achievements', () => {
   it('unlocks on first post and notifies once', async () => {
     const u = await user();

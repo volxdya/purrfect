@@ -39,6 +39,8 @@ Each of these has a test or a reason. Don't weaken them to make something work.
 
 - The API port variable is `API_PORT`, not `PORT`: the preview launcher sets `PORT=5173`, which made the API fight Vite for the port.
 - `useSyncExternalStore` subscribe must return a function returning void; returning `Set.delete` directly crashes React (`destroy is not a function`) with a blank screen.
+- better-sqlite3 counts `?1` once per occurrence, so numbered parameters fail with `Too many parameter values`. Use plain `?` and pass the value once per placeholder.
+- If Vite restarts while git rewrites files (checkout, reset), it can lose `vite.config.ts` and keep running without the proxy and `fs.allow`. Symptoms: `/api/*` returns `index.html` with status 200, fonts get 403. Fix: restart `npm run dev` or `touch client/vite.config.ts`.
 - Multipart order matters: the `meta` field must be appended before the file, or `file.fields.meta` is empty.
 - Sticker sizes in the editor use `cqw` units and need `container-type: inline-size` on `.editor-canvas`. Preview and canvas export draw separately (`exportImage`, `drawCaption`), so change both together.
 - Battle uses `POST /battle/new` inside `useQuery`. It's safe because an unfinished battle is returned again rather than a new one being created.

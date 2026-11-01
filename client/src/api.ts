@@ -114,8 +114,9 @@ export async function api<T>(method: string, url: string, body?: object | FormDa
     headers,
     body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, data.error ?? 'Что-то пошло не так');
+  // A proxy or dev server can answer with HTML. Treating that as data would crash the page later.
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data === null) throw new ApiError(res.status, data?.error ?? 'Что-то пошло не так');
   return data as T;
 }
 
